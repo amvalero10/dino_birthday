@@ -465,11 +465,82 @@
             });
         }
 
+        /* 8-BIT HAPPY BIRTHDAY BACKGROUND MUSIC */
+        const NOTE_FREQS = {
+            G4: 392.00, A4: 440.00, B4: 493.88, C5: 523.25,
+            D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99
+        };
+        // [note, beats] - null note is a rest
+        const birthdaySong = [
+            ['G4', 0.75], ['G4', 0.25], ['A4', 1], ['G4', 1], ['C5', 1], ['B4', 2],
+            ['G4', 0.75], ['G4', 0.25], ['A4', 1], ['G4', 1], ['D5', 1], ['C5', 2],
+            ['G4', 0.75], ['G4', 0.25], ['G5', 1], ['E5', 1], ['C5', 1], ['B4', 1], ['A4', 2],
+            ['F5', 0.75], ['F5', 0.25], ['E5', 1], ['C5', 1], ['D5', 1], ['C5', 2],
+            [null, 2]
+        ];
+        const BEAT_SECONDS = 0.4;
+        let musicTimer = null;
+        let musicNodes = [];
+
+        function scheduleBirthdaySong(startTime) {
+            let t = startTime;
+            birthdaySong.forEach(([note, beats]) => {
+                const dur = beats * BEAT_SECONDS;
+                if (note) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(NOTE_FREQS[note], t);
+                    gain.gain.setValueAtTime(0.05, t);
+                    gain.gain.setValueAtTime(0.05, t + dur * 0.75);
+                    gain.gain.linearRampToValueAtTime(0.0001, t + dur * 0.9);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(t);
+                    osc.stop(t + dur);
+                    musicNodes.push(osc);
+                    osc.onended = () => { musicNodes = musicNodes.filter(n => n !== osc); };
+                }
+                t += dur;
+            });
+            // Queue the next loop shortly before this one ends
+            musicTimer = setTimeout(() => scheduleBirthdaySong(t), (t - audioCtx.currentTime - 0.3) * 1000);
+        }
+
+        function startMusic() {
+            if (isMuted || musicTimer) return;
+            initAudio();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            scheduleBirthdaySong(audioCtx.currentTime + 0.1);
+        }
+
+        function stopMusic() {
+            clearTimeout(musicTimer);
+            musicTimer = null;
+            musicNodes.forEach(osc => { try { osc.stop(); } catch (e) {} });
+            musicNodes = [];
+        }
+
         function toggleMute() {
             isMuted = !isMuted;
             document.getElementById('audio-indicator').innerText = isMuted ? '🔇' : '🔊';
             document.getElementById('sound-label').innerText = isMuted ? 'Sound_Off.wav' : 'Sound_On.wav';
+            if (isMuted) {
+                stopMusic();
+            } else {
+                startMusic();
+            }
         }
+
+        // Pause the music when the page is in the background (e.g. switching back to WhatsApp)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopMusic();
+            } else if (audioCtx) {
+                // Only resume if the guest already tapped once (audio unlocked)
+                startMusic();
+            }
+        });
 
         /* WINDOW CONTROLS */
         function openWindow(id) {
@@ -693,8 +764,9 @@
         makeDraggable(document.getElementById('main-window'));
         makeDraggable(document.getElementById('map-window'));
 
-        window.addEventListener('touchstart', () => { initAudio(); }, { once: true });
-        window.addEventListener('click', () => { initAudio(); }, { once: true });
+        // Browsers only allow audio after the first tap/click, so the music starts then
+        window.addEventListener('touchstart', () => { startMusic(); }, { once: true });
+        window.addEventListener('click', () => { startMusic(); }, { once: true });
     </script>
 </body>
 </html>

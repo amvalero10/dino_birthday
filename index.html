@@ -143,6 +143,20 @@
 </head>
 <body class="relative h-screen w-screen overflow-hidden flex flex-col justify-between">
 
+    <!-- TAP-TO-OPEN SPLASH (browsers only allow sound after the first tap) -->
+    <div id="splash" onclick="openInvitation()" class="absolute inset-0 z-[60] flex items-center justify-center bg-black/60 cursor-pointer">
+        <div class="win-outset w-[85vw] max-w-xs flex flex-col shadow-2xl">
+            <div class="win-titlebar p-1.5 pl-2 text-xs sm:text-sm">💌 New Message</div>
+            <div class="p-4 bg-[#c0c0c0] flex flex-col items-center space-y-3 text-center">
+                <div class="text-5xl animate-bounce">🦖</div>
+                <div class="text-sm font-bold text-black">You have a party invitation!</div>
+                <button class="win-btn w-full p-3 text-sm sm:text-base font-black bg-yellow-300 text-black border-2 border-black">
+                    🎈 Tap to Open 🔊
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Canvas overlay for interactive balloons, dinosaurs & confetti -->
     <canvas id="effects-canvas"></canvas>
 
@@ -406,6 +420,8 @@
 
         function initAudio() {
             if (!audioCtx) {
+                // Let iPhones play even when the silent switch is on (Safari 16.4+)
+                if (navigator.audioSession) navigator.audioSession.type = 'playback';
                 audioCtx = new AudioCtx();
             }
         }
@@ -510,8 +526,23 @@
         function startMusic() {
             if (isMuted || musicTimer) return;
             initAudio();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            scheduleBirthdaySong(audioCtx.currentTime + 0.1);
+            if (audioCtx.state === 'running') {
+                scheduleBirthdaySong(audioCtx.currentTime + 0.1);
+                return;
+            }
+            // Audio still locked: resume() only succeeds during a tap, so start once it does
+            audioCtx.resume().then(() => {
+                if (!isMuted && !musicTimer && audioCtx.state === 'running') {
+                    scheduleBirthdaySong(audioCtx.currentTime + 0.1);
+                }
+            });
+        }
+
+        function openInvitation() {
+            const splash = document.getElementById('splash');
+            splash.classList.add('hidden');
+            splash.classList.remove('flex');
+            startMusic();
         }
 
         function stopMusic() {
@@ -764,9 +795,9 @@
         makeDraggable(document.getElementById('main-window'));
         makeDraggable(document.getElementById('map-window'));
 
-        // Browsers only allow audio after the first tap/click, so the music starts then
-        window.addEventListener('touchstart', () => { startMusic(); }, { once: true });
-        window.addEventListener('click', () => { startMusic(); }, { once: true });
+        // Browsers only allow audio after a tap/click (touchstart doesn't count), so keep
+        // trying on every tap; startMusic() does nothing once playing or when muted
+        ['touchend', 'click', 'keydown'].forEach(evt => window.addEventListener(evt, () => startMusic()));
     </script>
 </body>
 </html>
